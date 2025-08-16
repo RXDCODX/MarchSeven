@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) 2023 nerrog</Copyright>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <AssemblyVersion>2.0.1</AssemblyVersion>
+    <FileVersion>2.0.1</FileVersion>
+    <PackageVersion>$(AssemblyVersion)</PackageVersion>
+    <Version>$(AssemblyVersion)</Version>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Title>MarchSeven</Title>
+    <Description>Wrapper library for HoyoLab's API to retrieve data about Genshin Impact, Honkai Star Rail, and Zenless Zone Zero</Description>
+    <PackageProjectUrl>https://github.com/RXDCODX/MarchSeven</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/RXDCODX/MarchSeven</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+</Project>

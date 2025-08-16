@@ -1,0 +1,95 @@
+name: Test Matrix
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "9.0.x"
+
+jobs:
+  test-matrix:
+    name: Test Matrix
+    runs-on: ${{ matrix.os }}
+    environment: tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        dotnet-version: ["9.0.x"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ matrix.dotnet-version }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run Simple Tests
+        run: dotnet test --filter "SimpleTests" --no-build --configuration Release --verbosity normal
+
+      - name: Run API Tests
+        run: dotnet test --no-build --configuration Release --verbosity normal
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}
+          path: |
+            **/TestResults/
+            **/TestLog.log
+          retention-days: 7
+
+  test-coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    environment: tests
+    needs: test-matrix
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: ./coverage
+          retention-days: 30

@@ -1,0 +1,118 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "9.0.x"
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    environment: tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run Simple Tests (No API calls)
+        run: dotnet test --filter "SimpleTests" --no-build --configuration Release --verbosity normal
+
+      - name: Run API Tests
+        run: |
+          dotnet test --filter "UnitTest" --no-build --configuration Release --verbosity normal
+          dotnet test --filter "StarRailTest" --no-build --configuration Release --verbosity normal
+          dotnet test --filter "IntegrationTests" --no-build --configuration Release --verbosity normal
+          dotnet test --filter "UserStaminaTest" --no-build --configuration Release --verbosity normal
+          dotnet test --filter "StarRailStaminaEventsTest" --no-build --configuration Release --verbosity normal
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+        continue-on-error: true
+
+      - name: Run All Tests
+        run: dotnet test --no-build --configuration Release --verbosity normal
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            **/TestResults/
+            **/TestLog.log
+          retention-days: 7
+
+      - name: Comment PR with test results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            try {
+              // Try to find test results
+              const testResultsPath = path.join(process.env.GITHUB_WORKSPACE, 'MarchSeven.Tests', 'TestLog.log');
+              
+              if (fs.existsSync(testResultsPath)) {
+                const testLog = fs.readFileSync(testResultsPath, 'utf8');
+                const lastLines = testLog.split('\n').slice(-10).join('\n');
+                
+                github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: `## 🧪 Test Results
+
+                  **Simple Tests**: ✅ All passed (no API calls required)
+                  
+                  **API Tests**: Some tests may fail due to network issues or invalid tokens
+                  
+                  **Last Test Log Lines:**
+                  \`\`\`
+                  ${lastLines}
+                  \`\`\`
+                  
+                  > Note: API tests require valid HoyoLab tokens. Some failures are expected with test data.
+                  `
+                });
+              } else {
+                github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: `## 🧪 Test Results
+
+                  **Simple Tests**: ✅ All passed (no API calls required)
+                  
+                  **API Tests**: Completed with environment secrets
+                  
+                  > Tests completed successfully using the configured environment secrets.
+                  `
+                });
+              }
+            } catch (error) {
+              console.log('Error commenting PR:', error);
+            }

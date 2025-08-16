@@ -1,0 +1,93 @@
+name: PR Status Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  check-tests:
+    name: Check Test Status
+    runs-on: ubuntu-latest
+    environment: tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run Simple Tests
+        run: dotnet test --filter "SimpleTests" --no-build --configuration Release --verbosity normal
+
+      - name: Check Environment Secrets
+        run: |
+          if [ -z "$LTMID_V2" ] || [ -z "$LTOKEN_V2" ] || [ -z "$LTUID_V2" ]; then
+            echo "❌ Environment secrets not configured"
+            echo "LTMID_V2: ${LTMID_V2:+✅}${LTMID_V2:-❌}"
+            echo "LTOKEN_V2: ${LTOKEN_V2:+✅}${LTOKEN_V2:-❌}"
+            echo "LTUID_V2: ${LTUID_V2:+✅}${LTUID_V2:-❌}"
+            exit 1
+          else
+            echo "✅ All environment secrets are configured"
+          fi
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+
+      - name: Comment PR Status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const hasSecrets = process.env.LTMID_V2 && process.env.LTOKEN_V2 && process.env.LTUID_V2;
+
+            let body = `## 🔍 PR Status Check
+
+            **Build Status**: ✅ Success
+            **Simple Tests**: ✅ All passed
+            **Environment Secrets**: ${hasSecrets ? '✅ Configured' : '❌ Missing'}
+
+            `;
+
+            if (hasSecrets) {
+              body += `### 🧪 Test Environment
+              - **LTMID_V2**: ✅ Available
+              - **LTOKEN_V2**: ✅ Available  
+              - **LTUID_V2**: ✅ Available
+              
+              > Ready for full test execution with API calls
+              `;
+            } else {
+              body += `### ⚠️ Missing Configuration
+              - **LTMID_V2**: ❌ Not configured
+              - **LTOKEN_V2**: ❌ Not configured
+              - **LTUID_V2**: ❌ Not configured
+              
+              > Please configure environment secrets in Settings → Environments → tests
+              `;
+            }
+
+            body += `
+            ---
+            *This check runs automatically on PR creation and updates*
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}

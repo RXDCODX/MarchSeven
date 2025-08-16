@@ -1,0 +1,173 @@
+name: Publish - NuGet
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "9.0.x"
+
+jobs:
+  # Сначала выполняем все тесты
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    environment: tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run Simple Tests (No API calls)
+        run: dotnet test --filter "SimpleTests" --no-build --configuration Release --verbosity normal
+
+      - name: Run API Tests
+        run: |
+          dotnet test --filter "UnitTest" --no-build --configuration Release --verbosity normal
+          dotnet test --filter "StarRailTest" --no-build --configuration Release --verbosity normal
+          dotnet test --filter "IntegrationTests" --no-build --configuration Release --verbosity normal
+          dotnet test --filter "UserStaminaTest" --no-build --configuration Release --verbosity normal
+          dotnet test --filter "StarRailStaminaEventsTest" --no-build --configuration Release --verbosity normal
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+        continue-on-error: true
+
+      - name: Run All Tests
+        run: dotnet test --no-build --configuration Release --verbosity normal
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+
+  # Тесты на разных платформах
+  test-matrix:
+    name: Test Matrix
+    runs-on: ${{ matrix.os }}
+    environment: tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        dotnet-version: ["9.0.x"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ matrix.dotnet-version }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run Simple Tests
+        run: dotnet test --filter "SimpleTests" --no-build --configuration Release --verbosity normal
+
+      - name: Run API Tests
+        run: dotnet test --no-build --configuration Release --verbosity normal
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+        continue-on-error: true
+
+  # Покрытие тестами
+  test-coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    environment: tests
+    needs: test-matrix
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage
+        env:
+          LTMID_V2: ${{ secrets.LTMID_V2 }}
+          LTOKEN_V2: ${{ secrets.LTOKEN_V2 }}
+          LTUID_V2: ${{ secrets.LTUID_V2 }}
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: ./coverage
+          retention-days: 30
+
+  # Публикация NuGet пакета только после успешного выполнения всех тестов
+  publish-nuget:
+    name: Publish to NuGet
+    runs-on: ubuntu-latest
+    needs: [test, test-matrix, test-coverage]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build MarchSeven/MarchSeven.csproj --configuration Release --no-restore
+
+      - name: Pack
+        run: dotnet pack MarchSeven/MarchSeven.csproj --configuration Release --no-build --output ./nupkgs
+
+      - name: Publish to NuGet
+        run: dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ env.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
