@@ -1,4 +1,5 @@
-﻿using Xunit.Abstractions;
+﻿using MarchSeven.Util.Errors;
+using Xunit.Abstractions;
 
 namespace MarchSeven.Tests;
 
@@ -332,6 +333,23 @@ public class IntegrationTests(ITestOutputHelper testOutputHelper)
                 testOutputHelper.WriteLine($"Award {i + 1}: {award.Name} x{award.Count}");
             }
         }
+    }
+
+    [Fact]
+    public async Task TestRedeemDailyMark()
+    {
+        var cookie = TestData.CreateTestCookie();
+        var client = MarchSevenClient.Create(cookie);
+
+        var starRailClient = client.StarRail;
+
+        try
+        {
+            var reward = await starRailClient.ClaimDailyRewardAsync();
+
+            Assert.NotNull(reward);
+        }
+        catch (DailyRewardAlreadyReceivedException) { }
     }
 
     [Fact]
